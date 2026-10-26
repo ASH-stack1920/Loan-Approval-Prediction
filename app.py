@@ -73,14 +73,39 @@ st.markdown("""
 
 @st.cache_resource
 def load_trained_pipeline():
-    """Loads the serialized Random Forest pipeline from disk."""
+    """
+    Loads the serialized Random Forest pipeline from disk.
+    If the model file is not found (common in fresh cloud deployments),
+    it checks for the training dataset and automatically trains the model.
+    """
     model_paths = [
         "loan_rf_pipeline.joblib",
         os.path.join("dataset", "loan_rf_pipeline.joblib")
     ]
+    # 1. Try loading existing model artifact
     for p in model_paths:
         if os.path.exists(p):
-            return joblib.load(p), p
+            try:
+                pipeline = joblib.load(p)
+                return pipeline, p
+            except Exception:
+                # If loading fails (e.g. cross-Python version mismatch), fallback to auto-train
+                pass
+
+    # 2. If model artifact is missing, auto-train from dataset/train.csv if available
+    try:
+        from train_model import locate_dataset, train_and_save_pipeline
+        dataset_path = locate_dataset()
+        if dataset_path and os.path.exists(dataset_path):
+            pipeline = train_and_save_pipeline(
+                dataset_path=dataset_path,
+                model_filename="loan_rf_pipeline.joblib",
+                verbose=False
+            )
+            return pipeline, f"Auto-trained on deployment ({dataset_path})"
+    except Exception:
+        pass
+
     return None, None
 
 
@@ -109,8 +134,49 @@ st.markdown('<div class="sub-header">Enter the applicant\'s demographic, credit,
 pipeline, model_path = load_trained_pipeline()
 
 if pipeline is None:
-    st.error("⚠️ **Model Not Found!**")
-    st.warning("Please train the model first by running `python train_model.py` in your terminal. This creates `loan_rf_pipeline.joblib`.")
+    st.error("⚠️ **Model & Training Dataset Not Found on Streamlit Cloud**")
+    st.markdown("""
+    The application cannot find `loan_rf_pipeline.joblib` or `dataset/train.csv` in the deployed repository.
+    
+    This happens because the model and dataset files exist on your local computer but were not pushed to GitHub.
+    
+    ---
+    ### 🚀 Solution 1: Push the files to GitHub (Recommended)
+    Run these commands in your project terminal on your local computer:
+    ```bash
+    git add dataset/train.csv loan_rf_pipeline.joblib
+    git commit -m "Add dataset and model for cloud deployment"
+    git push origin main
+    ```
+    *Once pushed, Streamlit Community Cloud will automatically detect the files and reload the app.*
+    
+    ---
+    ### 📤 Solution 2: Upload directly here to test right now
+    You can upload `dataset/train.csv` or `loan_rf_pipeline.joblib` to activate the app immediately:
+    """)
+
+    uploaded_file = st.file_uploader(
+        "Upload train.csv (to auto-train) or loan_rf_pipeline.joblib",
+        type=["csv", "joblib"]
+    )
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith(".joblib"):
+                with open("loan_rf_pipeline.joblib", "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success("✅ Model file uploaded successfully! Reloading...")
+                st.cache_resource.clear()
+                st.rerun()
+            elif uploaded_file.name.endswith(".csv"):
+                os.makedirs("dataset", exist_ok=True)
+                with open(os.path.join("dataset", "train.csv"), "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success("✅ Dataset uploaded successfully! Training model now...")
+                st.cache_resource.clear()
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error processing uploaded file: {e}")
+
     st.stop()
 
 # --- INPUT FORM ---

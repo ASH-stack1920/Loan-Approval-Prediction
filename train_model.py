@@ -64,13 +64,21 @@ def inspect_dataset(df):
     print("=" * 60 + "\n")
 
 
-def main():
-    print("\n>>> Step 1: Loading Dataset...")
-    dataset_path = locate_dataset()
+def train_and_save_pipeline(dataset_path=None, model_filename="loan_rf_pipeline.joblib", verbose=True):
+    """
+    Trains the Random Forest preprocessing and classification pipeline on train.csv,
+    evaluates it on an 80/20 stratified validation split, saves the artifact to disk,
+    and returns the fitted pipeline.
+    """
+    if verbose:
+        print("\n>>> Step 1: Loading Dataset...")
+    if dataset_path is None:
+        dataset_path = locate_dataset()
     df = pd.read_csv(dataset_path)
 
-    print("\n>>> Step 2: Inspecting Dataset...")
-    inspect_dataset(df)
+    if verbose:
+        print("\n>>> Step 2: Inspecting Dataset...")
+        inspect_dataset(df)
 
     # Validate target column
     target_col = "Loan_Status"
@@ -81,7 +89,8 @@ def main():
     features_df = df.copy()
     if "Loan_ID" in features_df.columns:
         features_df = features_df.drop(columns=["Loan_ID"])
-        print("[INFO] Dropped 'Loan_ID' (not a predictive feature).")
+        if verbose:
+            print("[INFO] Dropped 'Loan_ID' (not a predictive feature).")
 
     # Separate features and target
     X = features_df.drop(columns=[target_col])
@@ -95,17 +104,19 @@ def main():
     categorical_cols = [c for c in categorical_cols if c in X.columns]
     numerical_cols = [c for c in numerical_cols if c in X.columns]
 
-    print(f"[INFO] Categorical columns ({len(categorical_cols)}): {categorical_cols}")
-    print(f"[INFO] Numerical columns ({len(numerical_cols)}): {numerical_cols}")
+    if verbose:
+        print(f"[INFO] Categorical columns ({len(categorical_cols)}): {categorical_cols}")
+        print(f"[INFO] Numerical columns ({len(numerical_cols)}): {numerical_cols}")
+        print("\n>>> Step 3: Splitting Dataset (80% Train, 20% Test)...")
 
-    print("\n>>> Step 3: Splitting Dataset (80% Train, 20% Test)...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.20, random_state=42, stratify=y
     )
-    print(f"[INFO] Training samples: {len(X_train)}")
-    print(f"[INFO] Testing samples:  {len(X_test)}")
+    if verbose:
+        print(f"[INFO] Training samples: {len(X_train)}")
+        print(f"[INFO] Testing samples:  {len(X_test)}")
+        print("\n>>> Step 4: Building Preprocessing Pipeline & Model...")
 
-    print("\n>>> Step 4: Building Preprocessing Pipeline & Model...")
     # Numerical Preprocessing: Median Imputation
     numerical_pipeline = Pipeline(steps=[
         ("imputer", SimpleImputer(strategy="median"))
@@ -134,40 +145,63 @@ def main():
         ))
     ])
 
-    print("\n>>> Step 5: Training Random Forest Classifier...")
+    if verbose:
+        print("\n>>> Step 5: Training Random Forest Classifier...")
     model_pipeline.fit(X_train, y_train)
-    print("[SUCCESS] Model training complete!")
+    if verbose:
+        print("[SUCCESS] Model training complete!")
 
-    print("\n>>> Step 6: Evaluating Model on Test Data...")
-    y_pred = model_pipeline.predict(X_test)
+    if verbose:
+        print("\n>>> Step 6: Evaluating Model on Test Data...")
+        y_pred = model_pipeline.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        cm = confusion_matrix(y_test, y_pred, labels=["Y", "N"])
 
-    acc = accuracy_score(y_test, y_pred)
-    cm = confusion_matrix(y_test, y_pred, labels=["Y", "N"])
+        print("=" * 60)
+        print("               MODEL EVALUATION RESULTS")
+        print("=" * 60)
+        print(f"Test Accuracy: {acc * 100:.2f}%\n")
+        print("Confusion Matrix (Labels: ['Approved (Y)', 'Rejected (N)']):")
+        print(f"                 Predicted 'Y'   Predicted 'N'")
+        print(f"  Actual 'Y':         {cm[0][0]:<14} {cm[0][1]}")
+        print(f"  Actual 'N':         {cm[1][0]:<14} {cm[1][1]}")
+        print("\nDetailed Classification Report:")
+        print(classification_report(y_test, y_pred, target_names=["Rejected (N)", "Approved (Y)"]))
+        print("=" * 60)
 
-    print("=" * 60)
-    print("               MODEL EVALUATION RESULTS")
-    print("=" * 60)
-    print(f"Test Accuracy: {acc * 100:.2f}%\n")
-    print("Confusion Matrix (Labels: ['Approved (Y)', 'Rejected (N)']):")
-    print(f"                 Predicted 'Y'   Predicted 'N'")
-    print(f"  Actual 'Y':         {cm[0][0]:<14} {cm[0][1]}")
-    print(f"  Actual 'N':         {cm[1][0]:<14} {cm[1][1]}")
-    print("\nDetailed Classification Report:")
-    print(classification_report(y_test, y_pred, target_names=["Rejected (N)", "Approved (Y)"]))
-    print("=" * 60)
+    if model_filename:
+        if verbose:
+            print("\n>>> Step 7: Saving Model & Pipeline using Joblib...")
+        joblib.dump(model_pipeline, model_filename)
+        if verbose:
+            print(f"[SUCCESS] Saved complete pipeline and model to: {model_filename}")
 
-    print("\n>>> Step 7: Saving Model & Pipeline using Joblib...")
-    model_filename = "loan_rf_pipeline.joblib"
-    joblib.dump(model_pipeline, model_filename)
-    print(f"[SUCCESS] Saved complete pipeline and model to: {model_filename}")
+    return model_pipeline
+
+
+def main():
+    model_pipeline = train_and_save_pipeline(verbose=True)
 
     # Verify saved model with a test prediction
     print("\n>>> Step 8: Verifying Saved Pipeline...")
+    model_filename = "loan_rf_pipeline.joblib"
     loaded_pipeline = joblib.load(model_filename)
-    sample_record = X_test.iloc[0:1]
+    sample_record = pd.DataFrame([{
+        "Gender": "Male",
+        "Married": "Yes",
+        "Dependents": "0",
+        "Education": "Graduate",
+        "Self_Employed": "No",
+        "ApplicantIncome": 5000.0,
+        "CoapplicantIncome": 1500.0,
+        "LoanAmount": 130.0,
+        "Loan_Amount_Term": 360.0,
+        "Credit_History": 1.0,
+        "Property_Area": "Urban"
+    }])
     sample_pred = loaded_pipeline.predict(sample_record)[0]
     sample_proba = loaded_pipeline.predict_proba(sample_record)[0]
-    print(f"[INFO] Verification prediction on test sample 0: {sample_pred}")
+    print(f"[INFO] Verification prediction on sample record: {sample_pred}")
     print(f"[INFO] Probabilities [N, Y]: {sample_proba}")
     print("[SUCCESS] Saved model verified successfully!\n")
 

@@ -152,3 +152,37 @@ After running this command, open your browser at **http://localhost:8501**.
    - **Decision Banner**: `🎉 LOAN APPROVED` or `❌ LOAN REJECTED`.
    - **Confidence Score**: Probability percentage calculated by the Random Forest model.
    - **Summary Card**: Review of all evaluated parameters.
+
+---
+
+## ☁️ Streamlit Community Cloud Deployment
+
+When deploying to [Streamlit Community Cloud](https://share.streamlit.io), the cloud environment only has access to files that are committed and pushed to your **GitHub repository**.
+
+### 1. Why the "Model Not Found" error occurred
+If `loan_rf_pipeline.joblib` or `dataset/train.csv` only exist on your local machine and were never committed to Git, the cloud container cannot find them.
+
+### 2. Built-in Auto-Training Feature
+To ensure 100% reliable cloud deployments, `app.py` now includes an **automatic startup check**:
+- If `loan_rf_pipeline.joblib` is present in the repository, it loads it immediately.
+- If `loan_rf_pipeline.joblib` is absent, the app automatically trains the pipeline from `dataset/train.csv` in ~2 seconds upon startup and caches it in memory using `@st.cache_resource`.
+
+### 3. Step-by-Step Deployment Checklist
+
+1. **Commit and push required files to GitHub**:
+   In your local project terminal, run:
+   ```bash
+   git add dataset/train.csv loan_rf_pipeline.joblib
+   git commit -m "Add training dataset and model pipeline for cloud deployment"
+   git push origin main
+   ```
+2. **Deploy on Streamlit Community Cloud**:
+   - Go to [share.streamlit.io](https://share.streamlit.io) and click **"New app"**.
+   - Select your repository: `Loan-Approval-Prediction`.
+   - Branch: `main`.
+   - Main file path: `app.py`.
+   - Click **"Deploy!"**.
+
+### 4. What if your dataset cannot be made public?
+- **Option A (Safest & Recommended)**: Commit and push only `loan_rf_pipeline.joblib` to GitHub. The serialized model contains mathematical weights and decision trees, but **no raw applicant data**.
+- **Option B (Direct Upload)**: If neither file is in GitHub, the deployed app provides a secure built-in file uploader on screen where you can upload `train.csv` or `loan_rf_pipeline.joblib` directly in your browser.
